@@ -21,6 +21,24 @@ A visualization toolkit for Blender, built for product, furniture and interior d
 - Rhino (any version that saves `.3dm`) for modelling
 - An API key for a cloud AI service (for the AI layer)
 
+## Rhino bridge (v0.1)
+
+Open the **Blendering** tab in the 3D viewport sidebar (N), pick the `.3dm` file and press **Sync from Rhino**. Turn on **Auto-sync on save** to update the scene every time Rhino saves the file.
+
+- Rhino layers become collections under `Rhino · <file name>`; objects are named after their layer.
+- Blocks become collection instances; their definitions live in the excluded `Blocks · <file name>` collection.
+- Units are converted to metres and the scene shows millimetres.
+- Materials you assign in Blender are kept on re-sync. A new object gets the Blender material whose name matches its Rhino layer, if one exists.
+- Objects deleted in Rhino are removed from Blender.
+
+The bridge needs the `rhino3dm` library in Blender's Python. Until it is bundled with the extension, install it from Blender's Python console:
+
+```python
+import sys, subprocess, bpy
+target = bpy.utils.user_resource('SCRIPTS', path="modules", create=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "--target", target, "rhino3dm"])
+```
+
 ## Installing (development)
 
 Build the extension from the `addon` folder:
