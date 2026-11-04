@@ -1,0 +1,20 @@
+schema_version = "1.0.0"
+
+id = "blendering"
+version = "0.1.0"
+name = "Blendering"
+tagline = "Rhino bridge, studio builder and scene-aware AI for visualization"
+maintainer = "vvsarolta"
+type = "add-on"
+
+website = "https://github.com/vvsarolta/blendering"
+
+tags = ["Render", "Import-Export", "Lighting", "Material"]
+
+blender_version_min = "5.2.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+files = "Read Rhino .3dm files from a watched folder"
+network = "Send scene passes to the AI service you configure"
