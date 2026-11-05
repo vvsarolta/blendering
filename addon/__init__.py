@@ -13,7 +13,7 @@ import os
 
 import bpy
 
-from . import rhino_bridge, studio
+from . import materials, rhino_bridge, studio, texture_library  # noqa: F401
 
 WATCH_INTERVAL = 2.0  # seconds between file checks when auto-sync is on
 
