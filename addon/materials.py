@@ -7,6 +7,8 @@ material, creating it on first use; an existing material with the same name is
 reused so the user's own tweaks are never overwritten.
 """
 
+import math
+
 import bpy
 
 PREFIX = "BL · "
@@ -43,22 +45,33 @@ def _coords(nt, x=-900):
     return mp
 
 
-def _build_pine(name):
-    """Light, natural pine with growth rings along the panel."""
+def _build_pine(name, grain='Z'):
+    """Light, natural pine, flat-sawn ("cathedral") grain.
+
+    ``grain`` is the object axis the grain runs along: 'Z' for upright panels,
+    'X' or 'Y' for horizontal boards. The ring centre sits outside the board, so
+    the faces show long arcs instead of the circles of end grain.
+    """
     mat, nt, bsdf = _new(name)
     mp = _coords(nt)
-    mp.inputs["Scale"].default_value = (1.0, 1.0, 0.25)  # stretch rings along Z
+    # rotate so the grain axis becomes the ring axis (Z of the wave texture)
+    if grain == 'X':
+        mp.inputs["Rotation"].default_value = (0.0, math.radians(90), 0.0)
+    elif grain == 'Y':
+        mp.inputs["Rotation"].default_value = (math.radians(90), 0.0, 0.0)
+    mp.inputs["Location"].default_value = (0.35, 0.12, 0.0)   # ring centre off the board
+    mp.inputs["Scale"].default_value = (1.0, 1.0, 0.18)       # long, slow arcs
 
     warp = nt.nodes.new("ShaderNodeTexNoise")
     warp.location = (-450, 200)
-    warp.inputs["Scale"].default_value = 3.0
-    warp.inputs["Detail"].default_value = 4.0
+    warp.inputs["Scale"].default_value = 2.0
+    warp.inputs["Detail"].default_value = 3.0
     nt.links.new(mp.outputs["Vector"], warp.inputs["Vector"])
 
     mix_vec = nt.nodes.new("ShaderNodeMix")
     mix_vec.data_type = 'VECTOR'
     mix_vec.location = (-250, 100)
-    mix_vec.inputs["Factor"].default_value = 0.08
+    mix_vec.inputs["Factor"].default_value = 0.04
     nt.links.new(mp.outputs["Vector"], mix_vec.inputs["A"])
     nt.links.new(warp.outputs["Color"], mix_vec.inputs["B"])
 
@@ -66,28 +79,65 @@ def _build_pine(name):
     rings.location = (-50, 100)
     rings.wave_type = 'RINGS'
     rings.rings_direction = 'Z'
-    rings.inputs["Scale"].default_value = 6.0
-    rings.inputs["Distortion"].default_value = 2.5
-    rings.inputs["Detail"].default_value = 2.0
+    rings.wave_profile = 'SAW'
+    rings.inputs["Scale"].default_value = 22.0
+    rings.inputs["Distortion"].default_value = 1.2
+    rings.inputs["Detail"].default_value = 1.0
     nt.links.new(mix_vec.outputs["Result"], rings.inputs["Vector"])
+
+    # fine longitudinal streaks
+    streak_map = nt.nodes.new("ShaderNodeMapping")
+    streak_map.location = (-450, -250)
+    streak_map.inputs["Scale"].default_value = (60.0, 60.0, 1.5)
+    nt.links.new(mp.outputs["Vector"], streak_map.inputs["Vector"])
+    streak = nt.nodes.new("ShaderNodeTexNoise")
+    streak.location = (-250, -250)
+    streak.inputs["Scale"].default_value = 4.0
+    nt.links.new(streak_map.outputs["Vector"], streak.inputs["Vector"])
 
     ramp = nt.nodes.new("ShaderNodeValToRGB")
     ramp.location = (100, 250)
-    ramp.color_ramp.elements[0].position = 0.35
-    ramp.color_ramp.elements[0].color = _srgb(236, 208, 176)
-    ramp.color_ramp.elements[1].position = 1.0
-    ramp.color_ramp.elements[1].color = _srgb(206, 160, 116)
+    el = ramp.color_ramp.elements
+    el[0].position = 0.0
+    el[0].color = _srgb(236, 214, 188)          # early wood, pale
+    el[1].position = 1.0
+    el[1].color = _srgb(205, 166, 128)          # late wood line
+    el.new(0.72).color = _srgb(232, 207, 178)
     nt.links.new(rings.outputs["Fac"], ramp.inputs["Fac"])
-    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+
+    tint = nt.nodes.new("ShaderNodeMix")
+    tint.data_type = 'RGBA'
+    tint.blend_type = 'MULTIPLY'
+    tint.location = (300, 300)
+    tint.inputs["Factor"].default_value = 0.12
+    nt.links.new(ramp.outputs["Color"], tint.inputs["A"])
+    nt.links.new(streak.outputs["Color"], tint.inputs["B"])
+    nt.links.new(tint.outputs["Result"], bsdf.inputs["Base Color"])
+    bsdf.location = (550, 0)
+    nt.nodes["Material Output"].location = (850, 0)
 
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.location = (100, -200)
-    bump.inputs["Strength"].default_value = 0.04
+    bump.location = (300, -200)
+    bump.inputs["Strength"].default_value = 0.03
     nt.links.new(rings.outputs["Fac"], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
-    bsdf.inputs["Roughness"].default_value = 0.5
+    bsdf.inputs["Roughness"].default_value = 0.55
     return mat
+
+
+def wood_axis(obj):
+    """Guess the grain direction of a board.
+
+    Horizontal boards (thinnest along Z) get the grain along their longer side;
+    upright boards get vertical grain unless they are clearly wider than tall.
+    """
+    d = obj.dimensions
+    thin = min(range(3), key=lambda i: d[i])
+    if thin == 2:
+        return 'X' if d.x >= d.y else 'Y'
+    width = d.y if thin == 0 else d.x
+    return 'Z' if d.z >= 0.6 * width else ('Y' if thin == 0 else 'X')
 
 
 def _build_felt(name, rgb=(58, 54, 50)):
@@ -141,13 +191,26 @@ def _build_matte(name, rgb=(40, 40, 42), roughness=0.9):
 
 
 LIBRARY = {
-    "Pine (natural)": lambda n: _build_pine(n),
-    "Wool felt (charcoal brown)": lambda n: _build_felt(n, (58, 54, 50)),
-    "Wall (charcoal)": lambda n: _build_matte(n, (44, 43, 45), 0.92),
+    "Pine (natural)": lambda n: _build_pine(n, 'Z'),
+    "Pine (natural, grain X)": lambda n: _build_pine(n, 'X'),
+    "Pine (natural, grain Y)": lambda n: _build_pine(n, 'Y'),
+    "Wool felt (charcoal brown)": lambda n: _build_felt(n, (50, 48, 46)),
+    "Wall (charcoal)": lambda n: _build_matte(n, (40, 40, 42), 0.92),
     "Paper (white seamless)": lambda n: _build_matte(n, (238, 238, 236), 0.85),
     "Plaster (warm white)": lambda n: _build_matte(n, (226, 220, 210), 0.9),
     "Concrete floor (light)": lambda n: _build_matte(n, (168, 164, 158), 0.8),
 }
+
+
+def assign_wood(objects, key="Pine (natural)"):
+    """Give each board the variant of ``key`` whose grain follows its longest side."""
+    for obj in objects:
+        if obj.type != 'MESH':
+            continue
+        axis = wood_axis(obj)
+        variant = key if axis == 'Z' else f"{key[:-1]}, grain {axis})"
+        obj.data.materials.clear()
+        obj.data.materials.append(get(variant))
 
 
 def get(key, rgb=None):

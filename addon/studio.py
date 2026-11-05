@@ -34,18 +34,18 @@ BUILTIN_PRESETS = {
     "Dark felt (moody)": {
         "description": "Charcoal wall, brown-grey wool felt floor, one large soft key "
                        "from the front left, deep fall-off to the right. High camera.",
-        "backdrop": {"type": "cyc", "corner_radius": 0.6, "wall_distance": 2.2,
+        "backdrop": {"type": "cyc", "corner_radius": 0.25, "wall_distance": 0.85,
                      "floor": "Wool felt (charcoal brown)", "wall": "Wall (charcoal)"},
         "lights": [
-            {"role": "key", "azimuth": -55, "elevation": 50, "distance": 3.2,
-             "size": 2.6, "power": 260, "temperature": 5000},
-            {"role": "fill", "azimuth": 70, "elevation": 15, "distance": 4.0,
-             "size": 2.0, "power": 18, "temperature": 5200},
+            {"role": "key", "azimuth": -60, "elevation": 48, "distance": 3.0,
+             "size": 2.2, "power": 240, "temperature": 5400, "spread": 70},
+            {"role": "fill", "azimuth": 75, "elevation": 15, "distance": 4.0,
+             "size": 2.0, "power": 10, "temperature": 5600},
         ],
-        "world": {"color": [8, 8, 9], "strength": 0.3},
-        "camera": {"azimuth": 28, "elevation": 42, "focal_mm": 70,
-                   "aspect": [4, 5], "fill": 0.62, "shift_y": -0.07},
-        "exposure": 0.0,
+        "world": {"color": [8, 8, 9], "strength": 0.05},
+        "camera": {"azimuth": 28, "elevation": 36, "focal_mm": 70,
+                   "aspect": [4, 5], "fill": 0.74, "shift_y": -0.12},
+        "exposure": -0.3,
     },
     "White seamless (e-commerce)": {
         "description": "Bright white sweep, soft even light, gentle contact shadow.",
