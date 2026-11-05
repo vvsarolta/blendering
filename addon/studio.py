@@ -40,7 +40,7 @@ BUILTIN_PRESETS = {
             # raking key from the front left, aimed a little towards the front-left
             # floor: bright floor bottom left, fall-off to the right, wall behind stays dark
             {"role": "key", "azimuth": -62, "elevation": 42, "distance": 1.7,
-             "size": 0.9, "aspect": 1.45, "power": 60, "temperature": 5400, "spread": 50,
+             "size": 0.9, "aspect": 1.45, "power": 70, "temperature": 5400, "spread": 34,
              "aim_offset": [-0.1, 0.15, -0.1]},
             # background spot: a soft pool of light on the upper right of the wall
             {"role": "background", "kind": "spot", "aim": "wall", "aim_offset": [0.6, 0.0, 1.0],
