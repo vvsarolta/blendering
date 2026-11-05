@@ -19,7 +19,7 @@ UA = {"User-Agent": "Blendering-addon (https://github.com/vvsarolta/blendering)"
 # key: (source, asset id, texture width in metres (None = from the source),
 #       tint sRGB 0-255 or None, saturation multiplier)
 LIBRARY = {
-    "Pine, raw (photo)": ("ambientcg", "Wood050", 0.8, None, 0.6),
+    "Pine, raw (photo)": ("ambientcg", "Wood050", 0.8, None, 0.85),
     "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (44, 43, 42), 0.5),
 }
 
@@ -123,6 +123,7 @@ def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1
             hs = nt.nodes.new("ShaderNodeHueSaturation")
             hs.location = (-100, 300)
             hs.inputs["Saturation"].default_value = saturation
+            hs.inputs["Hue"].default_value = 0.51  # nudge pinkish scans towards yellow
             nt.links.new(color_out, hs.inputs["Color"])
             color_out = hs.outputs["Color"]
         if tint is not None:
