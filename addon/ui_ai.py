@@ -26,7 +26,7 @@ class BLENDERING_OT_ai_ask(bpy.types.Operator):
     def execute(self, context):
         wm = context.window_manager
         try:
-            ai.ask(wm.bl_ai_request, context.scene, wm.bl_ai_model)
+            ai.ask(wm.bl_ai_request, context.scene, "" if wm.bl_ai_model == "DEFAULT" else wm.bl_ai_model)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
@@ -134,7 +134,7 @@ def register():
     wm.bl_ai_request = bpy.props.StringProperty(
         name="Request", description="What should change? E.g. 'tegyél egy vázát a szék mellé'")
     wm.bl_ai_model = bpy.props.EnumProperty(name="Model", items=[
-        ('', "Default", "The default model of your plan"),
+        ('DEFAULT', "Default", "The default model of your plan"),
         ('sonnet', "Sonnet", "Fast"),
         ('opus', "Opus", "Most capable, uses more of your plan"),
     ])
