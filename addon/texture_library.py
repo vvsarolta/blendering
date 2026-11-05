@@ -201,7 +201,9 @@ def get(key, grain='X', thin='Z'):
     if mat is not None:
         return mat
     maps, src_width = (fetch_polyhaven(asset) if source == "polyhaven" else fetch_ambientcg(asset))
-    return build(name, maps, width_m or src_width, tint, _rotation_for(grain, thin), saturation, contrast)
+    mat = build(name, maps, width_m or src_width, tint, _rotation_for(grain, thin), saturation, contrast)
+    mat["blendering_key"] = key  # variants of one material share their adjustments
+    return mat
 
 
 def assign_wood(objects, key="Pine, raw (photo)"):

@@ -73,6 +73,42 @@ class BlenderingSceneSettings(bpy.types.PropertyGroup):
     )
     studio_spec: bpy.props.StringProperty(options={'HIDDEN'})  # last built spec, JSON
 
+    mat_brightness: bpy.props.FloatProperty(
+        name="Brightness",
+        description="Darker or lighter than the scanned texture (1 = original). "
+                    "Applies to every board using this material",
+        min=0.0, max=3.0, soft_min=0.2, soft_max=2.0,
+        get=lambda self: _adjust_get("Value"),
+        set=lambda self, v: _adjust_set("Value", v),
+    )
+    mat_saturation: bpy.props.FloatProperty(
+        name="Colour strength",
+        description="Less or more saturated than the scanned texture (1 = original)",
+        min=0.0, max=2.0,
+        get=lambda self: _adjust_get("Saturation"),
+        set=lambda self, v: _adjust_set("Saturation", v),
+    )
+
+
+def _adjust_nodes():
+    ob = bpy.context.active_object
+    mat = ob.active_material if ob else None
+    if mat is None or not mat.use_nodes:
+        return []
+    key = mat.get("blendering_key")
+    mats = [m for m in bpy.data.materials if key and m.get("blendering_key") == key] or [mat]
+    return [n for m in mats if m.node_tree for n in [m.node_tree.nodes.get("Blendering adjust")] if n]
+
+
+def _adjust_get(socket):
+    nodes = _adjust_nodes()
+    return nodes[0].inputs[socket].default_value if nodes else 1.0
+
+
+def _adjust_set(socket, value):
+    for n in _adjust_nodes():
+        n.inputs[socket].default_value = value
+
 
 _preset_cache = []
 
@@ -268,6 +304,17 @@ class BLENDERING_PT_main(bpy.types.Panel):
         sub.label(text="From description or photo (AI layer):")
         sub.prop(s, "studio_description", text="", icon="TEXT")
         sub.prop(s, "studio_reference", text="")
+
+        box = layout.box()
+        box.label(text="Material", icon="MATERIAL")
+        ob = context.active_object
+        mat = ob.active_material if ob else None
+        if _adjust_nodes():
+            box.label(text=mat.get("blendering_key", mat.name))
+            box.prop(s, "mat_brightness", slider=True)
+            box.prop(s, "mat_saturation", slider=True)
+        else:
+            box.label(text="Select an object with a Blendering material", icon="INFO")
 
         box = layout.box()
         box.label(text="AI layer", icon="SHADERFX")
