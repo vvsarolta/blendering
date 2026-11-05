@@ -147,14 +147,15 @@ def _build_felt(name, rgb=(58, 54, 50)):
 
     fine = nt.nodes.new("ShaderNodeTexNoise")
     fine.location = (-450, 200)
-    fine.inputs["Scale"].default_value = 900.0
-    fine.inputs["Detail"].default_value = 2.0
+    fine.inputs["Scale"].default_value = 320.0
+    fine.inputs["Detail"].default_value = 3.0
+    fine.inputs["Roughness"].default_value = 0.7
     nt.links.new(mp.outputs["Vector"], fine.inputs["Vector"])
 
     weave = nt.nodes.new("ShaderNodeTexWave")
     weave.location = (-450, -100)
-    weave.inputs["Scale"].default_value = 260.0
-    weave.inputs["Distortion"].default_value = 1.5
+    weave.inputs["Scale"].default_value = 90.0
+    weave.inputs["Distortion"].default_value = 3.0
     nt.links.new(mp.outputs["Vector"], weave.inputs["Vector"])
 
     ramp = nt.nodes.new("ShaderNodeValToRGB")
@@ -173,8 +174,8 @@ def _build_felt(name, rgb=(58, 54, 50)):
 
     bump = nt.nodes.new("ShaderNodeBump")
     bump.location = (100, -200)
-    bump.inputs["Strength"].default_value = 0.35
-    bump.inputs["Distance"].default_value = 0.002
+    bump.inputs["Strength"].default_value = 0.7
+    bump.inputs["Distance"].default_value = 0.003
     nt.links.new(mixh.outputs["Value"], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
@@ -195,7 +196,7 @@ LIBRARY = {
     "Pine (natural, grain X)": lambda n: _build_pine(n, 'X'),
     "Pine (natural, grain Y)": lambda n: _build_pine(n, 'Y'),
     "Wool felt (charcoal brown)": lambda n: _build_felt(n, (50, 48, 46)),
-    "Wall (charcoal)": lambda n: _build_matte(n, (40, 40, 42), 0.92),
+    "Wall (charcoal)": lambda n: _build_matte(n, (36, 36, 38), 0.92),
     "Paper (white seamless)": lambda n: _build_matte(n, (238, 238, 236), 0.85),
     "Plaster (warm white)": lambda n: _build_matte(n, (226, 220, 210), 0.9),
     "Concrete floor (light)": lambda n: _build_matte(n, (168, 164, 158), 0.8),
