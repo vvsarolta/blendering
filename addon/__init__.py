@@ -261,18 +261,20 @@ class BLENDERING_OT_straighten_verticals(bpy.types.Operator):
 
     def execute(self, context):
         import math
-        from mathutils import Euler
+        from mathutils import Euler, Vector
         cam = context.scene.camera
         cd = cam.data
-        e = cam.matrix_world.to_euler('XYZ')
-        tilt = math.radians(90.0) - e.x            # > 0 when looking down
+        mw = cam.matrix_world.copy()
+        # read the viewing direction itself; Euler angles can flip (e.g. -88, 180, 1)
+        fwd = (mw.to_3x3() @ Vector((0.0, 0.0, -1.0))).normalized()
+        tilt = -math.asin(max(-1.0, min(1.0, fwd.z)))   # > 0 when looking down
         if abs(tilt) >= math.radians(80):
             self.report({'ERROR'}, "The camera looks almost straight up or down; nothing to straighten")
             return {'CANCELLED'}
+        yaw = math.atan2(-fwd.x, fwd.y)
         cam.rotation_mode = 'XYZ'
-        mw = cam.matrix_world.copy()
         loc = mw.translation.copy()
-        level = Euler((math.radians(90.0), 0.0, e.z), 'XYZ').to_matrix().to_4x4()
+        level = Euler((math.radians(90.0), 0.0, yaw), 'XYZ').to_matrix().to_4x4()
         level.translation = loc
         cam.matrix_world = (cam.parent.matrix_world.inverted() @ level) if cam.parent else level
         # shift is measured in units of the larger sensor dimension (AUTO fit)
