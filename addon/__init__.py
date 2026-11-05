@@ -13,7 +13,7 @@ import os
 
 import bpy
 
-from . import materials, rhino_bridge, studio, texture_library  # noqa: F401
+from . import materials, post, rhino_bridge, studio, texture_library, ui_post  # noqa: F401
 
 WATCH_INTERVAL = 2.0  # seconds between file checks when auto-sync is on
 
@@ -390,9 +390,6 @@ class BLENDERING_PT_main(bpy.types.Panel):
         else:
             box.label(text="Select an object with a Blendering material", icon="INFO")
 
-        box = layout.box()
-        box.label(text="AI layer", icon="SHADERFX")
-        box.label(text="Coming in phase 2", icon="TIME")
 
 
 classes = (
@@ -412,6 +409,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.blendering = bpy.props.PointerProperty(type=BlenderingSceneSettings)
+    ui_post.register()
     bpy.app.handlers.load_post.append(_on_load)
 
 
@@ -420,6 +418,7 @@ def unregister():
         bpy.app.handlers.load_post.remove(_on_load)
     if bpy.app.timers.is_registered(_watch_tick):
         bpy.app.timers.unregister(_watch_tick)
+    ui_post.unregister()
     del bpy.types.Scene.blendering
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
