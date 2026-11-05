@@ -162,6 +162,12 @@ def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1
             mul.inputs[1].default_value = tuple(t / max(a, 1e-4) for t, a in zip(target, avg))
             nt.links.new(color_out, mul.inputs[0])
             color_out = mul.outputs["Vector"]
+        # user control: Value = brightness (1 = as scanned), Saturation = colour strength
+        adj = nt.nodes.new("ShaderNodeHueSaturation")
+        adj.name = adj.label = "Blendering adjust"
+        adj.location = (250, 300)
+        nt.links.new(color_out, adj.inputs["Color"])
+        color_out = adj.outputs["Color"]
         nt.links.new(color_out, bsdf.inputs["Base Color"])
     if "rough" in maps:
         r = _img(nt, maps["rough"], "Non-Color", -400, -50, vec)
