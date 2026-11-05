@@ -226,12 +226,13 @@ def build_group(scene):
 
     img = rl.outputs["Image"]
     product = None
-    if any(l.mask != 'ALL' for l in post.layers) and "IndexOB" in rl.outputs:
+    index_out = rl.outputs.get("Object Index") or rl.outputs.get("IndexOB")
+    if any(l.mask != 'ALL' for l in post.layers) and index_out is not None:
         idm = nt.nodes.new("CompositorNodeIDMask")
         idm.location = (-350, -300)
         idm.inputs["Index"].default_value = PRODUCT_INDEX
         idm.inputs["Anti-Alias"].default_value = True
-        nt.links.new(rl.outputs["IndexOB"], idm.inputs["ID value"])
+        nt.links.new(index_out, idm.inputs["ID value"])
         product = idm.outputs[0]
 
     x = -200
