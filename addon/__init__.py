@@ -13,7 +13,7 @@ import os
 
 import bpy
 
-from . import materials, post, rhino_bridge, studio, texture_library, ui_post  # noqa: F401
+from . import assets, materials, post, rhino_bridge, studio, texture_library, ui_assets, ui_post  # noqa: F401
 
 WATCH_INTERVAL = 2.0  # seconds between file checks when auto-sync is on
 
@@ -410,6 +410,7 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.Scene.blendering = bpy.props.PointerProperty(type=BlenderingSceneSettings)
     ui_post.register()
+    ui_assets.register()
     bpy.app.handlers.load_post.append(_on_load)
 
 
@@ -418,6 +419,7 @@ def unregister():
         bpy.app.handlers.load_post.remove(_on_load)
     if bpy.app.timers.is_registered(_watch_tick):
         bpy.app.timers.unregister(_watch_tick)
+    ui_assets.unregister()
     ui_post.unregister()
     del bpy.types.Scene.blendering
     for cls in reversed(classes):
