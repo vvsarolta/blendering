@@ -248,6 +248,39 @@ class BLENDERING_OT_relight(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERING_OT_straighten_verticals(bpy.types.Operator):
+    bl_idname = "blendering.straighten_verticals"
+    bl_label = "Straighten verticals"
+    bl_description = ("Level the camera so vertical edges stay parallel to the frame, and shift "
+                      "the lens so the framing stays the same (like a tilt-shift lens)")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.camera is not None
+
+    def execute(self, context):
+        import math
+        from mathutils import Euler
+        cam = context.scene.camera
+        cd = cam.data
+        e = cam.matrix_world.to_euler('XYZ')
+        tilt = math.radians(90.0) - e.x            # > 0 when looking down
+        if abs(tilt) >= math.radians(80):
+            self.report({'ERROR'}, "The camera looks almost straight up or down; nothing to straighten")
+            return {'CANCELLED'}
+        cam.rotation_mode = 'XYZ'
+        mw = cam.matrix_world.copy()
+        loc = mw.translation.copy()
+        level = Euler((math.radians(90.0), 0.0, e.z), 'XYZ').to_matrix().to_4x4()
+        level.translation = loc
+        cam.matrix_world = (cam.parent.matrix_world.inverted() @ level) if cam.parent else level
+        # shift is measured in units of the larger sensor dimension (AUTO fit)
+        cd.shift_y -= math.tan(tilt) * cd.lens / cd.sensor_width
+        self.report({'INFO'}, f"Verticals straightened (tilt {math.degrees(tilt):.1f}° moved into lens shift)")
+        return {'FINISHED'}
+
+
 class BLENDERING_OT_save_studio(bpy.types.Operator):
     bl_idname = "blendering.save_studio"
     bl_label = "Save as preset"
@@ -336,6 +369,7 @@ class BLENDERING_PT_main(bpy.types.Panel):
         row.scale_y = 1.4
         row.operator("blendering.build_studio", icon="SCENE")
         box.operator("blendering.relight", icon="LIGHT")
+        box.operator("blendering.straighten_verticals", icon="CAMERA_DATA")
         box.operator("blendering.save_studio", icon="FILE_TICK")
         sub = box.column(align=True)
         sub.label(text="From description or photo (AI layer):")
@@ -365,6 +399,7 @@ classes = (
     BLENDERING_OT_sync,
     BLENDERING_OT_build_studio,
     BLENDERING_OT_relight,
+    BLENDERING_OT_straighten_verticals,
     BLENDERING_OT_save_studio,
     BLENDERING_OT_save_material_default,
     BLENDERING_PT_main,
