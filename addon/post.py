@@ -38,7 +38,7 @@ def _rebuild(self=None, context=None):
 
 
 class BlenderingPostLayer(bpy.types.PropertyGroup):
-    kind: bpy.props.EnumProperty(items=[t[:4] for t in LAYER_TYPES], update=_rebuild)
+    kind: bpy.props.EnumProperty(items=[(*t, i) for i, t in enumerate(LAYER_TYPES)], update=_rebuild)
     enabled: bpy.props.BoolProperty(name="On", default=True, update=_rebuild)
     opacity: bpy.props.FloatProperty(name="Opacity", min=0.0, max=1.0, default=1.0,
                                      subtype='FACTOR', update=_rebuild)

@@ -43,7 +43,7 @@ class BLENDERING_OT_post_add(bpy.types.Operator):
     bl_label = "Add adjustment layer"
     bl_options = {'REGISTER', 'UNDO'}
 
-    kind: bpy.props.EnumProperty(items=[t[:4] for t in post.LAYER_TYPES])
+    kind: bpy.props.EnumProperty(items=[(*t, i) for i, t in enumerate(post.LAYER_TYPES)])
 
     def execute(self, context):
         p = context.scene.blendering_post
