@@ -41,11 +41,11 @@ BUILTIN_PRESETS = {
             # floor: bright floor bottom left, fall-off to the right, wall behind stays dark
             {"role": "key", "azimuth": -62, "elevation": 42, "distance": 1.7,
              "size": 0.9, "aspect": 1.45, "power": 60, "temperature": 5400, "spread": 50,
-             "aim_offset": [-0.2, 0.3, -0.25]},
+             "aim_offset": [-0.1, 0.15, -0.1]},
             # background spot: a soft pool of light on the upper right of the wall
-            {"role": "background", "kind": "spot", "aim": "wall", "aim_offset": [0.9, 0.0, 1.3],
-             "azimuth": 45, "elevation": 55, "distance": 1.3, "spot_size": 55, "blend": 1.0,
-             "size": 0.3, "power": 45, "temperature": 5000},
+            {"role": "background", "kind": "spot", "aim": "wall", "aim_offset": [0.6, 0.0, 1.0],
+             "azimuth": 30, "elevation": 50, "distance": 1.3, "spot_size": 70, "blend": 1.0,
+             "size": 0.3, "power": 220, "temperature": 5000},
             {"role": "fill", "azimuth": 80, "elevation": 20, "distance": 3.0,
              "size": 2.0, "power": 1.2, "temperature": 5600},
         ],

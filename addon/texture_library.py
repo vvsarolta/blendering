@@ -20,8 +20,8 @@ UA = {"User-Agent": "Blendering-addon (https://github.com/vvsarolta/blendering)"
 #       tint sRGB 0-255 or None, saturation multiplier)
 LIBRARY = {
     "Pine, raw (photo)": ("ambientcg", "Wood050", 0.8, None, 0.85),
-    "Walnut, oiled (photo)": ("polyhaven", "black_walnut_veneer_01", None, (96, 64, 44), 1.0),
-    "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (58, 56, 54), 0.5),
+    "Walnut, oiled (photo)": ("polyhaven", "black_walnut_veneer_01", None, (78, 54, 40), 1.0, 2.2),
+    "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (46, 45, 44), 0.5),
 }
 
 
@@ -96,8 +96,8 @@ def _img(nt, path, colorspace, x, y, vec):
     return node
 
 
-def _average_linear(image, samples=4000):
-    """Average linear RGB of an sRGB image (sampled)."""
+def _average_linear(image, samples=4000, gamma=1.0):
+    """Average linear RGB of an sRGB image (sampled), after an optional gamma."""
     px = image.pixels[:]
     n = len(px) // 4
     step = max(1, n // samples)
@@ -108,12 +108,12 @@ def _average_linear(image, samples=4000):
             v = px[i * 4 + c]
             if not image.is_float:
                 v = v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
-            acc[c] += v
+            acc[c] += v ** gamma
         count += 1
     return [a / count for a in acc]
 
 
-def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1.0):
+def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1.0, contrast=1.0):
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     nt = mat.node_tree
@@ -137,6 +137,12 @@ def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1
     if "color" in maps:
         col = _img(nt, maps["color"], "sRGB", -400, 250, vec)
         color_out = col.outputs["Color"]
+        if contrast != 1.0:  # gamma > 1 deepens the grain of pale, low-contrast scans
+            gm = nt.nodes.new("ShaderNodeGamma")
+            gm.location = (-250, 300)
+            gm.inputs["Gamma"].default_value = contrast
+            nt.links.new(color_out, gm.inputs["Color"])
+            color_out = gm.outputs["Color"]
         if saturation != 1.0:
             hs = nt.nodes.new("ShaderNodeHueSaturation")
             hs.location = (-100, 300)
@@ -148,7 +154,7 @@ def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1
             # tint = the colour the material should have on average. Scale each channel
             # by target / texture average, so the grain and weave variation survive.
             from .materials import _srgb
-            avg = _average_linear(col.image)
+            avg = _average_linear(col.image, gamma=contrast)
             target = _srgb(*tint)[:3]
             mul = nt.nodes.new("ShaderNodeVectorMath")
             mul.operation = 'MULTIPLY'
@@ -182,13 +188,14 @@ def _rotation_for(grain, thin):
 
 def get(key, grain='X', thin='Z'):
     """Material ``key`` from LIBRARY, oriented for a board with the given grain and thin axis."""
-    source, asset, width_m, tint, saturation = LIBRARY[key]
+    source, asset, width_m, tint, saturation, *rest = LIBRARY[key]
+    contrast = rest[0] if rest else 1.0
     name = f"BL · {key}" + (f" · {grain}/{thin}" if (grain, thin) != ('X', 'Z') else "")
     mat = bpy.data.materials.get(name)
     if mat is not None:
         return mat
     maps, src_width = (fetch_polyhaven(asset) if source == "polyhaven" else fetch_ambientcg(asset))
-    return build(name, maps, width_m or src_width, tint, _rotation_for(grain, thin), saturation)
+    return build(name, maps, width_m or src_width, tint, _rotation_for(grain, thin), saturation, contrast)
 
 
 def assign_wood(objects, key="Pine, raw (photo)"):
