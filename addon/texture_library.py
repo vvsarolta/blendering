@@ -20,6 +20,7 @@ UA = {"User-Agent": "Blendering-addon (https://github.com/vvsarolta/blendering)"
 #       tint sRGB 0-255 or None, saturation multiplier)
 LIBRARY = {
     "Pine, raw (photo)": ("ambientcg", "Wood050", 0.8, None, 0.85),
+    "Walnut (photo)": ("polyhaven", "black_walnut_veneer_01", None, None, 1.0),
     "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (44, 43, 42), 0.5),
 }
 

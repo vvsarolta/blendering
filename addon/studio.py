@@ -37,12 +37,13 @@ BUILTIN_PRESETS = {
         "backdrop": {"type": "cyc", "corner_radius": 0.25, "wall_distance": 0.85,
                      "floor": "Wool twill, charcoal (photo)", "wall": "Wall (charcoal)"},
         "lights": [
-            {"role": "key", "azimuth": -60, "elevation": 48, "distance": 3.0,
-             "size": 2.2, "power": 95, "temperature": 5400, "spread": 70},
-            {"role": "fill", "azimuth": 75, "elevation": 15, "distance": 4.0,
-             "size": 2.0, "power": 5, "temperature": 5600},
+            # raking key from the front left, close enough for a real fall-off
+            {"role": "key", "azimuth": -62, "elevation": 42, "distance": 1.7,
+             "size": 0.9, "aspect": 1.45, "power": 60, "temperature": 5400, "spread": 55},
+            {"role": "fill", "azimuth": 80, "elevation": 20, "distance": 3.0,
+             "size": 2.0, "power": 1.2, "temperature": 5600},
         ],
-        "world": {"color": [8, 8, 9], "strength": 0.03},
+        "world": {"color": [8, 8, 9], "strength": 0.015},
         "camera": {"azimuth": 28, "elevation": 36, "focal_mm": 70,
                    "aspect": [4, 5], "fill": 0.6, "shift_y": 0.1},
         "exposure": 0.0,
@@ -200,6 +201,63 @@ def _backdrop_mesh(width, depth, height, radius, segments=16):
 
 # ------------------------------------------------------------------- build
 
+def _build_lights(spec, centre, size, cam_az, coll):
+    for i, ls in enumerate(spec.get("lights", [])):
+        role = ls.get("role", f"light {i + 1}")
+        dist = ls.get("distance", 3.0) * size
+        pos = centre + _direction(cam_az + ls.get("azimuth", 0), ls.get("elevation", 30)) * dist
+        light = bpy.data.lights.new(f"{role.title()} light", 'AREA')
+        light.shape = 'DISK' if ls.get("shape", "softbox") == "round" else 'RECTANGLE'
+        light.size = ls.get("size", 2.0) * size
+        light.size_y = light.size * ls.get("aspect", 1.0)
+        # power in the spec is for a 1 m subject; scale with distance squared
+        light.energy = ls.get("power", 100) * (size ** 2)
+        light.color = _kelvin_to_rgb(ls.get("temperature", 5500))
+        light.spread = math.radians(ls.get("spread", 180))
+        ob = bpy.data.objects.new(light.name, light)
+        ob.location = pos
+        ob.rotation_euler = (centre - pos).to_track_quat('-Z', 'Y').to_euler()
+        ob[STUDIO_KEY] = role
+        coll.objects.link(ob)
+
+
+def _set_world(spec, scene):
+    ws = spec.get("world", {})
+    world = scene.world or bpy.data.worlds.new("World")
+    scene.world = world
+    world.use_nodes = True
+    bg = next((n for n in world.node_tree.nodes if n.type == 'BACKGROUND'), None)
+    if bg is not None:
+        bg.inputs["Color"].default_value = _srgb(ws.get("color", [10, 10, 10])) + (1.0,)
+        bg.inputs["Strength"].default_value = ws.get("strength", 0.3)
+    scene.view_settings.exposure = spec.get("exposure", 0.0)
+
+
+def relight(spec, subject, scene=None):
+    """Rebuild only the lights of ``spec``, aimed relative to the scene's current camera."""
+    scene = scene or bpy.context.scene
+    if scene.camera is None:
+        raise ValueError("The scene has no camera. Build the studio first.")
+    lo, hi = subject_bounds(subject)
+    centre = (lo + hi) / 2
+    size = max((hi - lo).length, 1e-3)
+    coll = bpy.data.collections.get(COLL_NAME)
+    if coll is None:
+        coll = bpy.data.collections.new(COLL_NAME)
+        scene.collection.children.link(coll)
+    for o in list(coll.objects):
+        if o.type == 'LIGHT':
+            data = o.data
+            bpy.data.objects.remove(o)
+            if data.users == 0:
+                bpy.data.lights.remove(data)
+    d = scene.camera.matrix_world.translation - centre
+    cam_az = math.degrees(math.atan2(d.x, -d.y))
+    _build_lights(spec, centre, size, cam_az, coll)
+    _set_world(spec, scene)
+    return coll
+
+
 def build(spec, subject, scene=None):
     """Build the studio described by ``spec`` around ``subject`` (a list of objects)."""
     scene = scene or bpy.context.scene
@@ -228,34 +286,8 @@ def build(spec, subject, scene=None):
         ob[STUDIO_KEY] = "backdrop"
         coll.objects.link(ob)
 
-    # Lights -------------------------------------------------------------
-    for i, ls in enumerate(spec.get("lights", [])):
-        role = ls.get("role", f"light {i + 1}")
-        dist = ls.get("distance", 3.0) * size
-        pos = centre + _direction(cam_az + ls.get("azimuth", 0), ls.get("elevation", 30)) * dist
-        light = bpy.data.lights.new(f"{role.title()} light", 'AREA')
-        light.shape = 'DISK' if ls.get("shape", "softbox") == "round" else 'RECTANGLE'
-        light.size = ls.get("size", 2.0) * size
-        light.size_y = light.size * ls.get("aspect", 1.0)
-        # power in the spec is for a 1 m subject; scale with distance squared
-        light.energy = ls.get("power", 100) * (size ** 2)
-        light.color = _kelvin_to_rgb(ls.get("temperature", 5500))
-        light.spread = math.radians(ls.get("spread", 180))
-        ob = bpy.data.objects.new(light.name, light)
-        ob.location = pos
-        ob.rotation_euler = (centre - pos).to_track_quat('-Z', 'Y').to_euler()
-        ob[STUDIO_KEY] = role
-        coll.objects.link(ob)
-
-    # World --------------------------------------------------------------
-    ws = spec.get("world", {})
-    world = scene.world or bpy.data.worlds.new("World")
-    scene.world = world
-    world.use_nodes = True
-    bg = next((n for n in world.node_tree.nodes if n.type == 'BACKGROUND'), None)
-    if bg is not None:
-        bg.inputs["Color"].default_value = _srgb(ws.get("color", [10, 10, 10])) + (1.0,)
-        bg.inputs["Strength"].default_value = ws.get("strength", 0.3)
+    _build_lights(spec, centre, size, cam_az, coll)
+    _set_world(spec, scene)
 
     # Camera -------------------------------------------------------------
     cam_data = bpy.data.cameras.new("Studio camera")
@@ -279,5 +311,4 @@ def build(spec, subject, scene=None):
     coll.objects.link(cam_ob)
     scene.camera = cam_ob
 
-    scene.view_settings.exposure = spec.get("exposure", 0.0)
     return coll

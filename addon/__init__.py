@@ -193,6 +193,25 @@ class BLENDERING_OT_build_studio(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERING_OT_relight(bpy.types.Operator):
+    bl_idname = "blendering.relight"
+    bl_label = "Relight (keep camera)"
+    bl_description = ("Rebuild only the lights of the chosen studio, aimed from your current "
+                      "camera angle. Camera, backdrop and objects stay as they are")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        s = context.scene.blendering
+        try:
+            spec = studio.load_preset(s.studio_preset)
+            studio.relight(spec, _subject_objects(context), context.scene)
+        except Exception as exc:
+            self.report({'ERROR'}, f"Relight: {exc}")
+            return {'CANCELLED'}
+        self.report({'INFO'}, f"Lights rebuilt: {s.studio_preset}")
+        return {'FINISHED'}
+
+
 class BLENDERING_OT_save_studio(bpy.types.Operator):
     bl_idname = "blendering.save_studio"
     bl_label = "Save as preset"
@@ -243,6 +262,7 @@ class BLENDERING_PT_main(bpy.types.Panel):
         row = box.row()
         row.scale_y = 1.4
         row.operator("blendering.build_studio", icon="SCENE")
+        box.operator("blendering.relight", icon="LIGHT")
         box.operator("blendering.save_studio", icon="FILE_TICK")
         sub = box.column(align=True)
         sub.label(text="From description or photo (AI layer):")
@@ -259,6 +279,7 @@ classes = (
     BlenderingSceneSettings,
     BLENDERING_OT_sync,
     BLENDERING_OT_build_studio,
+    BLENDERING_OT_relight,
     BLENDERING_OT_save_studio,
     BLENDERING_PT_main,
 )
