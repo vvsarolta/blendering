@@ -16,10 +16,11 @@ import bpy
 
 UA = {"User-Agent": "Blendering-addon (https://github.com/vvsarolta/blendering)"}
 
-# key: (source, asset id, texture width in metres (None = from the source), tint sRGB 0-255 or None)
+# key: (source, asset id, texture width in metres (None = from the source),
+#       tint sRGB 0-255 or None, saturation multiplier)
 LIBRARY = {
-    "Pine, raw (photo)": ("ambientcg", "Wood050", 0.6, None),
-    "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (70, 66, 62)),
+    "Pine, raw (photo)": ("ambientcg", "Wood050", 0.8, None, 0.6),
+    "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (44, 43, 42), 0.5),
 }
 
 
@@ -94,7 +95,7 @@ def _img(nt, path, colorspace, x, y, vec):
     return node
 
 
-def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0)):
+def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1.0):
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     nt = mat.node_tree
@@ -118,6 +119,12 @@ def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0)):
     if "color" in maps:
         col = _img(nt, maps["color"], "sRGB", -400, 250, vec)
         color_out = col.outputs["Color"]
+        if saturation != 1.0:
+            hs = nt.nodes.new("ShaderNodeHueSaturation")
+            hs.location = (-100, 300)
+            hs.inputs["Saturation"].default_value = saturation
+            nt.links.new(color_out, hs.inputs["Color"])
+            color_out = hs.outputs["Color"]
         if tint is not None:
             mix = nt.nodes.new("ShaderNodeMix")
             mix.data_type = 'RGBA'
@@ -155,13 +162,13 @@ def _rotation_for(grain, thin):
 
 def get(key, grain='X', thin='Z'):
     """Material ``key`` from LIBRARY, oriented for a board with the given grain and thin axis."""
-    source, asset, width_m, tint = LIBRARY[key]
+    source, asset, width_m, tint, saturation = LIBRARY[key]
     name = f"BL · {key}" + (f" · {grain}/{thin}" if (grain, thin) != ('X', 'Z') else "")
     mat = bpy.data.materials.get(name)
     if mat is not None:
         return mat
     maps, src_width = (fetch_polyhaven(asset) if source == "polyhaven" else fetch_ambientcg(asset))
-    return build(name, maps, width_m or src_width, tint, _rotation_for(grain, thin))
+    return build(name, maps, width_m or src_width, tint, _rotation_for(grain, thin), saturation)
 
 
 def assign_wood(objects, key="Pine, raw (photo)"):
