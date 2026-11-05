@@ -99,16 +99,18 @@ def list_presets():
     names = list(BUILTIN_PRESETS)
     d = user_preset_dir()
     for f in sorted(os.listdir(d)):
-        if f.endswith(".json"):
+        if f.endswith(".json") and f[:-5] not in names:
             names.append(f[:-5])
     return names
 
 
 def load_preset(name):
-    if name in BUILTIN_PRESETS:
-        return json.loads(json.dumps(BUILTIN_PRESETS[name]))
-    with open(os.path.join(user_preset_dir(), name + ".json"), encoding="utf-8") as fh:
-        return json.load(fh)
+    """A saved user preset wins over a built-in one of the same name."""
+    path = os.path.join(user_preset_dir(), name + ".json")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    return json.loads(json.dumps(BUILTIN_PRESETS[name]))
 
 
 def save_preset(name, spec):
@@ -242,7 +244,7 @@ def _build_lights(spec, centre, size, cam_az, coll, floor_z=None):
             light.spread = math.radians(ls.get("spread", 180))
         # power in the spec is for a 1 m subject; scale with distance squared
         light.energy = ls.get("power", 100) * (size ** 2)
-        light.color = _kelvin_to_rgb(ls.get("temperature", 5500))
+        light.color = tuple(ls["color"]) if "color" in ls else _kelvin_to_rgb(ls.get("temperature", 5500))
         ob = bpy.data.objects.new(light.name, light)
         ob.location = pos
         ob.rotation_euler = (target - pos).to_track_quat('-Z', 'Y').to_euler()
@@ -260,6 +262,115 @@ def _set_world(spec, scene):
         bg.inputs["Color"].default_value = _srgb(ws.get("color", [10, 10, 10])) + (1.0,)
         bg.inputs["Strength"].default_value = ws.get("strength", 0.3)
     scene.view_settings.exposure = spec.get("exposure", 0.0)
+
+
+def _wrap(deg):
+    return (deg + 180.0) % 360.0 - 180.0
+
+
+def capture(base_spec, subject, scene=None):
+    """Read the studio as it is now in the scene and return it as a spec.
+
+    The inverse of ``build``: lights, camera, world and exposure are measured
+    relative to the subject and the camera, so the result can be rebuilt around
+    any other product. Backdrop materials and shape come from ``base_spec``.
+    """
+    scene = scene or bpy.context.scene
+    spec = json.loads(json.dumps(base_spec))
+    lo, hi = subject_bounds(subject)
+    centre = (lo + hi) / 2
+    size = max((hi - lo).length, 1e-3)
+    radius = size / 2
+    coll = bpy.data.collections.get(COLL_NAME)
+    cam = scene.camera
+    if cam is None:
+        raise ValueError("The scene has no camera.")
+
+    # camera
+    d = cam.matrix_world.translation - centre
+    cam_az = math.degrees(math.atan2(d.x, -d.y))
+    cam_el = math.degrees(math.asin(max(-1.0, min(1.0, d.z / d.length))))
+    cd = cam.data
+    rx, ry = scene.render.resolution_x, scene.render.resolution_y
+    g = math.gcd(rx, ry)
+    half_fov = math.atan((cd.sensor_width / 2) / cd.lens)
+    if rx != ry:
+        half_fov = math.atan(math.tan(half_fov) * min(rx, ry) / max(rx, ry))
+    spec["camera"] = {"azimuth": round(cam_az, 1), "elevation": round(cam_el, 1),
+                      "focal_mm": round(cd.lens, 1), "aspect": [rx // g, ry // g],
+                      "fill": round(radius / (d.length * math.tan(half_fov)), 3),
+                      "shift_y": round(cd.shift_y, 3)}
+
+    # backdrop: keep its shape, record where the wall really is
+    a = math.radians(cam_az)
+    right = Vector((math.cos(a), math.sin(a), 0.0))
+    toward = Vector((math.sin(a), -math.cos(a), 0.0))
+    backdrop = next((o for o in coll.objects if o.get(STUDIO_KEY) == "backdrop"), None) if coll else None
+    wall_point = None
+    if backdrop is not None:
+        wall_n = (backdrop.matrix_world.to_3x3() @ Vector((0, 1, 0))).normalized()
+        wall_p0 = backdrop.matrix_world.translation
+        wd = (wall_p0 - Vector((centre.x, centre.y, lo.z))).dot(-toward)
+        spec.setdefault("backdrop", {})["wall_distance"] = round(max(0.1, wd) / size, 3)
+        wall_point = centre - toward * wd
+        wall_point.z = lo.z
+
+    # lights
+    lights = []
+    for ob in (coll.objects if coll else []):
+        if ob.type != 'LIGHT':
+            continue
+        L = ob.data
+        v = ob.matrix_world.translation - centre
+        fwd = (ob.matrix_world.to_3x3() @ Vector((0, 0, -1))).normalized()
+        entry = {
+            "role": ob.get(STUDIO_KEY, ob.name.replace(" light", "").lower()),
+            "azimuth": round(_wrap(math.degrees(math.atan2(v.x, -v.y)) - cam_az), 1),
+            "elevation": round(math.degrees(math.asin(max(-1.0, min(1.0, v.z / v.length)))), 1),
+            "distance": round(v.length / size, 3),
+            "power": round(L.energy / size ** 2, 2),
+            "color": [round(c, 4) for c in L.color],
+        }
+        # where it points: the wall for a light whose beam lands on it, otherwise the
+        # point of the beam closest to the subject
+        target = None
+        if wall_point is not None and ob.get(STUDIO_KEY) == "background":
+            denom = fwd.dot(wall_n)
+            if abs(denom) > 1e-6:
+                t = (wall_p0 - ob.matrix_world.translation).dot(wall_n) / denom
+                if t > 0:
+                    target = ob.matrix_world.translation + fwd * t
+                    entry["aim"] = "wall"
+                    off = target - wall_point
+        if target is None:
+            t = max(0.0, (centre - ob.matrix_world.translation).dot(fwd))
+            target = ob.matrix_world.translation + fwd * t
+            off = target - centre
+        entry["aim_offset"] = [round(off.dot(right) / size, 3), round(off.dot(toward) / size, 3),
+                               round(off.z / size, 3)]
+        if L.type == 'SPOT':
+            entry.update({"kind": "spot", "spot_size": round(math.degrees(L.spot_size), 1),
+                          "blend": round(L.spot_blend, 3), "size": round(L.shadow_soft_size / size, 3)})
+        elif L.type == 'AREA':
+            entry.update({"size": round(L.size / size, 3),
+                          "aspect": round((L.size_y / L.size) if L.shape in {'RECTANGLE', 'ELLIPSE'} else 1.0, 3),
+                          "spread": round(math.degrees(L.spread), 1),
+                          "shape": "round" if L.shape in {'DISK', 'ELLIPSE'} else "softbox"})
+        lights.append(entry)
+    if lights:
+        spec["lights"] = sorted(lights, key=lambda e: ["key", "background", "fill"].index(e["role"])
+                                if e["role"] in ("key", "background", "fill") else 9)
+
+    # world and exposure
+    world = scene.world
+    bg = next((n for n in world.node_tree.nodes if n.type == 'BACKGROUND'), None) if world and world.use_nodes else None
+    if bg is not None:
+        col = bg.inputs["Color"].default_value
+        to_srgb = lambda c: round(255 * (12.92 * c if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055))
+        spec["world"] = {"color": [to_srgb(c) for c in col[:3]],
+                         "strength": round(bg.inputs["Strength"].default_value, 4)}
+    spec["exposure"] = round(scene.view_settings.exposure, 3)
+    return spec
 
 
 def relight(spec, subject, scene=None):

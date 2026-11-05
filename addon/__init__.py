@@ -251,21 +251,58 @@ class BLENDERING_OT_relight(bpy.types.Operator):
 class BLENDERING_OT_save_studio(bpy.types.Operator):
     bl_idname = "blendering.save_studio"
     bl_label = "Save as preset"
-    bl_description = "Save the last built studio as a preset you can reuse in any project"
+    bl_description = ("Save the studio exactly as it is now (lights you moved or changed, "
+                      "camera, exposure) as a preset you can rebuild in any project")
 
     name: bpy.props.StringProperty(name="Name", default="My studio")
 
     @classmethod
     def poll(cls, context):
-        return bool(context.scene.blendering.studio_spec)
+        return context.scene.camera is not None
 
     def invoke(self, context, event):
+        current = context.scene.blendering.studio_preset
+        if current and current != "NONE":
+            self.name = current
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
-        studio.save_preset(self.name, json.loads(context.scene.blendering.studio_spec))
-        context.scene.blendering.studio_preset = self.name
+        s = context.scene.blendering
+        try:
+            base = studio.load_preset(s.studio_preset) if s.studio_preset in studio.list_presets() else {}
+            spec = studio.capture(base, _subject_objects(context), context.scene)
+        except Exception as exc:
+            self.report({'ERROR'}, f"Save studio: {exc}")
+            return {'CANCELLED'}
+        studio.save_preset(self.name, spec)
+        s.studio_spec = json.dumps(spec)
+        s.studio_preset = self.name
         self.report({'INFO'}, f"Saved studio preset: {self.name}")
+        return {'FINISHED'}
+
+
+class BLENDERING_OT_save_material_default(bpy.types.Operator):
+    bl_idname = "blendering.save_material_default"
+    bl_label = "Save as default"
+    bl_description = ("Remember this brightness and colour strength for this material, "
+                      "so it comes like this in every new project")
+
+    @classmethod
+    def poll(cls, context):
+        return bool(_adjust_nodes())
+
+    def execute(self, context):
+        mat = context.active_object.active_material
+        key = mat.get("blendering_key")
+        if not key:
+            self.report({'ERROR'}, "This material is not from the Blendering library")
+            return {'CANCELLED'}
+        node = _adjust_nodes()[0]
+        texture_library.save_override(key, {
+            "Value": round(node.inputs["Value"].default_value, 3),
+            "Saturation": round(node.inputs["Saturation"].default_value, 3),
+        })
+        self.report({'INFO'}, f"Saved as default: {key}")
         return {'FINISHED'}
 
 
@@ -313,6 +350,7 @@ class BLENDERING_PT_main(bpy.types.Panel):
             box.label(text=mat.get("blendering_key", mat.name))
             box.prop(s, "mat_brightness", slider=True)
             box.prop(s, "mat_saturation", slider=True)
+            box.operator("blendering.save_material_default", icon="FILE_TICK")
         else:
             box.label(text="Select an object with a Blendering material", icon="INFO")
 
@@ -328,6 +366,7 @@ classes = (
     BLENDERING_OT_build_studio,
     BLENDERING_OT_relight,
     BLENDERING_OT_save_studio,
+    BLENDERING_OT_save_material_default,
     BLENDERING_PT_main,
 )
 

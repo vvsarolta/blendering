@@ -203,7 +203,32 @@ def get(key, grain='X', thin='Z'):
     maps, src_width = (fetch_polyhaven(asset) if source == "polyhaven" else fetch_ambientcg(asset))
     mat = build(name, maps, width_m or src_width, tint, _rotation_for(grain, thin), saturation, contrast)
     mat["blendering_key"] = key  # variants of one material share their adjustments
+    adj = mat.node_tree.nodes.get("Blendering adjust")
+    for socket, value in load_overrides().get(key, {}).items():
+        if adj is not None and socket in adj.inputs:
+            adj.inputs[socket].default_value = value
     return mat
+
+
+def _overrides_path():
+    folder = bpy.utils.user_resource('CONFIG', path="blendering", create=True)
+    return os.path.join(folder, "material_defaults.json")
+
+
+def load_overrides():
+    try:
+        with open(_overrides_path(), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_override(key, values):
+    """Remember ``values`` ({socket: value} of the adjust node) as the default for ``key``."""
+    data = load_overrides()
+    data[key] = values
+    with open(_overrides_path(), "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
 
 
 def assign_wood(objects, key="Pine, raw (photo)"):
