@@ -135,8 +135,8 @@ class BLENDERING_OT_post_export(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        img = bpy.data.images.get("Render Result")
-        return img is not None and img.has_data
+        # the Render Result only reports pixel data while it is displayed, so just check it exists
+        return bpy.data.images.get("Render Result") is not None
 
     def invoke(self, context, event):
         base = bpy.path.abspath("//") or os.path.expanduser("~")
