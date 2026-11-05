@@ -37,9 +37,15 @@ BUILTIN_PRESETS = {
         "backdrop": {"type": "cyc", "corner_radius": 0.25, "wall_distance": 0.85,
                      "floor": "Wool twill, charcoal (photo)", "wall": "Wall (charcoal)"},
         "lights": [
-            # raking key from the front left, close enough for a real fall-off
+            # raking key from the front left, aimed a little towards the front-left
+            # floor: bright floor bottom left, fall-off to the right, wall behind stays dark
             {"role": "key", "azimuth": -62, "elevation": 42, "distance": 1.7,
-             "size": 0.9, "aspect": 1.45, "power": 60, "temperature": 5400, "spread": 55},
+             "size": 0.9, "aspect": 1.45, "power": 60, "temperature": 5400, "spread": 50,
+             "aim_offset": [-0.2, 0.3, -0.25]},
+            # background spot: a soft pool of light on the upper right of the wall
+            {"role": "background", "kind": "spot", "aim": "wall", "aim_offset": [0.9, 0.0, 1.3],
+             "azimuth": 45, "elevation": 55, "distance": 1.3, "spot_size": 55, "blend": 1.0,
+             "size": 0.3, "power": 45, "temperature": 5000},
             {"role": "fill", "azimuth": 80, "elevation": 20, "distance": 3.0,
              "size": 2.0, "power": 1.2, "temperature": 5600},
         ],
@@ -201,22 +207,45 @@ def _backdrop_mesh(width, depth, height, radius, segments=16):
 
 # ------------------------------------------------------------------- build
 
-def _build_lights(spec, centre, size, cam_az, coll):
+def _build_lights(spec, centre, size, cam_az, coll, floor_z=None):
+    """Lights are placed around the subject, relative to the camera direction.
+
+    ``aim`` = "subject" (default) or "wall" (the backdrop wall behind the subject);
+    ``aim_offset`` = [right, towards camera, up] in subject sizes, so a light can be
+    pointed at the floor in front of the subject or at a corner of the wall.
+    ``kind`` = "area" (softbox, default) or "spot" (``spot_size`` in degrees).
+    """
+    a = math.radians(cam_az)
+    right = Vector((math.cos(a), math.sin(a), 0.0))
+    toward = Vector((math.sin(a), -math.cos(a), 0.0))
+    wall_dist = spec.get("backdrop", {}).get("wall_distance", 2.0) * size
+    wall_point = centre - toward * wall_dist
+    if floor_z is not None:
+        wall_point.z = floor_z
     for i, ls in enumerate(spec.get("lights", [])):
         role = ls.get("role", f"light {i + 1}")
         dist = ls.get("distance", 3.0) * size
         pos = centre + _direction(cam_az + ls.get("azimuth", 0), ls.get("elevation", 30)) * dist
-        light = bpy.data.lights.new(f"{role.title()} light", 'AREA')
-        light.shape = 'DISK' if ls.get("shape", "softbox") == "round" else 'RECTANGLE'
-        light.size = ls.get("size", 2.0) * size
-        light.size_y = light.size * ls.get("aspect", 1.0)
+        base = wall_point if ls.get("aim") == "wall" else centre
+        r_off, t_off, u_off = ls.get("aim_offset", [0.0, 0.0, 0.0])
+        target = base + (right * r_off + toward * t_off + Vector((0, 0, u_off))) * size
+        kind = ls.get("kind", "area")
+        light = bpy.data.lights.new(f"{role.title()} light", 'SPOT' if kind == "spot" else 'AREA')
+        if kind == "spot":
+            light.spot_size = math.radians(ls.get("spot_size", 45))
+            light.spot_blend = ls.get("blend", 1.0)
+            light.shadow_soft_size = ls.get("size", 0.2) * size
+        else:
+            light.shape = 'DISK' if ls.get("shape", "softbox") == "round" else 'RECTANGLE'
+            light.size = ls.get("size", 2.0) * size
+            light.size_y = light.size * ls.get("aspect", 1.0)
+            light.spread = math.radians(ls.get("spread", 180))
         # power in the spec is for a 1 m subject; scale with distance squared
         light.energy = ls.get("power", 100) * (size ** 2)
         light.color = _kelvin_to_rgb(ls.get("temperature", 5500))
-        light.spread = math.radians(ls.get("spread", 180))
         ob = bpy.data.objects.new(light.name, light)
         ob.location = pos
-        ob.rotation_euler = (centre - pos).to_track_quat('-Z', 'Y').to_euler()
+        ob.rotation_euler = (target - pos).to_track_quat('-Z', 'Y').to_euler()
         ob[STUDIO_KEY] = role
         coll.objects.link(ob)
 
@@ -253,7 +282,15 @@ def relight(spec, subject, scene=None):
                 bpy.data.lights.remove(data)
     d = scene.camera.matrix_world.translation - centre
     cam_az = math.degrees(math.atan2(d.x, -d.y))
-    _build_lights(spec, centre, size, cam_az, coll)
+    backdrop = next((o for o in coll.objects if o.get(STUDIO_KEY) == "backdrop"), None)
+    if backdrop is not None:  # use the real wall, it was placed for the original camera
+        spec = dict(spec)
+        bd = dict(spec.get("backdrop", {}))
+        to_wall = backdrop.matrix_world.translation - Vector((centre.x, centre.y, lo.z))
+        a = math.radians(cam_az)
+        bd["wall_distance"] = max(0.1, to_wall.dot(Vector((-math.sin(a), math.cos(a), 0)))) / size
+        spec["backdrop"] = bd
+    _build_lights(spec, centre, size, cam_az, coll, lo.z)
     _set_world(spec, scene)
     return coll
 
@@ -286,7 +323,7 @@ def build(spec, subject, scene=None):
         ob[STUDIO_KEY] = "backdrop"
         coll.objects.link(ob)
 
-    _build_lights(spec, centre, size, cam_az, coll)
+    _build_lights(spec, centre, size, cam_az, coll, floor_z)
     _set_world(spec, scene)
 
     # Camera -------------------------------------------------------------

@@ -20,8 +20,8 @@ UA = {"User-Agent": "Blendering-addon (https://github.com/vvsarolta/blendering)"
 #       tint sRGB 0-255 or None, saturation multiplier)
 LIBRARY = {
     "Pine, raw (photo)": ("ambientcg", "Wood050", 0.8, None, 0.85),
-    "Walnut (photo)": ("polyhaven", "black_walnut_veneer_01", None, None, 1.0),
-    "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (44, 43, 42), 0.5),
+    "Walnut, oiled (photo)": ("polyhaven", "black_walnut_veneer_01", None, (96, 64, 44), 1.0),
+    "Wool twill, charcoal (photo)": ("polyhaven", "poly_wool_herringbone", None, (58, 56, 54), 0.5),
 }
 
 
@@ -96,6 +96,23 @@ def _img(nt, path, colorspace, x, y, vec):
     return node
 
 
+def _average_linear(image, samples=4000):
+    """Average linear RGB of an sRGB image (sampled)."""
+    px = image.pixels[:]
+    n = len(px) // 4
+    step = max(1, n // samples)
+    acc = [0.0, 0.0, 0.0]
+    count = 0
+    for i in range(0, n, step):
+        for c in range(3):
+            v = px[i * 4 + c]
+            if not image.is_float:
+                v = v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+            acc[c] += v
+        count += 1
+    return [a / count for a in acc]
+
+
 def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1.0):
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
@@ -128,16 +145,17 @@ def build(name, maps, width_m, tint=None, rotation=(0.0, 0.0, 0.0), saturation=1
             nt.links.new(color_out, hs.inputs["Color"])
             color_out = hs.outputs["Color"]
         if tint is not None:
-            mix = nt.nodes.new("ShaderNodeMix")
-            mix.data_type = 'RGBA'
-            mix.blend_type = 'MULTIPLY'
-            mix.location = (100, 300)
-            mix.inputs["Factor"].default_value = 1.0
+            # tint = the colour the material should have on average. Scale each channel
+            # by target / texture average, so the grain and weave variation survive.
             from .materials import _srgb
-            # tint is the target average colour; scale so a mid-grey texture lands on it
-            mix.inputs["B"].default_value = tuple(min(1.0, c * 2.2) for c in _srgb(*tint)[:3]) + (1.0,)
-            nt.links.new(color_out, mix.inputs["A"])
-            color_out = mix.outputs["Result"]
+            avg = _average_linear(col.image)
+            target = _srgb(*tint)[:3]
+            mul = nt.nodes.new("ShaderNodeVectorMath")
+            mul.operation = 'MULTIPLY'
+            mul.location = (100, 300)
+            mul.inputs[1].default_value = tuple(t / max(a, 1e-4) for t, a in zip(target, avg))
+            nt.links.new(color_out, mul.inputs[0])
+            color_out = mul.outputs["Vector"]
         nt.links.new(color_out, bsdf.inputs["Base Color"])
     if "rough" in maps:
         r = _img(nt, maps["rough"], "Non-Color", -400, -50, vec)
