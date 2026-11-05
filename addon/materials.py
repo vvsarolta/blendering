@@ -196,7 +196,7 @@ LIBRARY = {
     "Pine (natural, grain X)": lambda n: _build_pine(n, 'X'),
     "Pine (natural, grain Y)": lambda n: _build_pine(n, 'Y'),
     "Wool felt (charcoal brown)": lambda n: _build_felt(n, (50, 48, 46)),
-    "Wall (charcoal)": lambda n: _build_matte(n, (36, 36, 38), 0.92),
+    "Wall (charcoal)": lambda n: _build_matte(n, (46, 46, 49), 0.92),
     "Paper (white seamless)": lambda n: _build_matte(n, (238, 238, 236), 0.85),
     "Plaster (warm white)": lambda n: _build_matte(n, (226, 220, 210), 0.9),
     "Concrete floor (light)": lambda n: _build_matte(n, (168, 164, 158), 0.8),
@@ -216,6 +216,9 @@ def assign_wood(objects, key="Pine (natural)"):
 
 def get(key, rgb=None):
     """Return the library material ``key``; ``rgb`` (sRGB 0-255) overrides its colour."""
+    from . import texture_library
+    if key in texture_library.LIBRARY:
+        return texture_library.get(key)
     name = PREFIX + key + (f" {rgb[0]}-{rgb[1]}-{rgb[2]}" if rgb else "")
     mat = bpy.data.materials.get(name)
     if mat is not None:

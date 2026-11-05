@@ -35,7 +35,7 @@ BUILTIN_PRESETS = {
         "description": "Charcoal wall, brown-grey wool felt floor, one large soft key "
                        "from the front left, deep fall-off to the right. High camera.",
         "backdrop": {"type": "cyc", "corner_radius": 0.25, "wall_distance": 0.85,
-                     "floor": "Wool felt (charcoal brown)", "wall": "Wall (charcoal)"},
+                     "floor": "Wool twill, charcoal (photo)", "wall": "Wall (charcoal)"},
         "lights": [
             {"role": "key", "azimuth": -60, "elevation": 48, "distance": 3.0,
              "size": 2.2, "power": 95, "temperature": 5400, "spread": 70},
