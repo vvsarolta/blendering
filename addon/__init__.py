@@ -3,16 +3,17 @@
 
 Modules (see the project plan):
     1. Rhino -> Blender bridge          (rhino_bridge.py)
-    2. Visualization tools               (coming)
+    2. Visualization tools               (studio.py, materials.py)
     3. Scene-aware AI layer              (coming)
     4. Post-processing panel             (coming)
 """
 
+import json
 import os
 
 import bpy
 
-from . import rhino_bridge
+from . import rhino_bridge, studio
 
 WATCH_INTERVAL = 2.0  # seconds between file checks when auto-sync is on
 
@@ -55,6 +56,43 @@ class BlenderingSceneSettings(bpy.types.PropertyGroup):
     )
     last_mtime: bpy.props.FloatProperty(options={'HIDDEN'})
     last_report: bpy.props.StringProperty(options={'HIDDEN'})
+
+    studio_preset: bpy.props.EnumProperty(
+        name="Studio",
+        description="Studio preset to build around the subject",
+        items=lambda self, context: _preset_items(),
+    )
+    studio_description: bpy.props.StringProperty(
+        name="Description",
+        description="Describe the studio in words (used by the AI layer)",
+    )
+    studio_reference: bpy.props.StringProperty(
+        name="Reference",
+        description="Reference photo of the look you want (used by the AI layer)",
+        subtype="FILE_PATH",
+    )
+    studio_spec: bpy.props.StringProperty(options={'HIDDEN'})  # last built spec, JSON
+
+
+_preset_cache = []
+
+
+def _preset_items():
+    _preset_cache.clear()
+    for name in studio.list_presets():
+        _preset_cache.append((name, name, studio.BUILTIN_PRESETS.get(name, {}).get("description", "Saved studio")))
+    return _preset_cache or [("NONE", "No presets", "")]
+
+
+def _subject_objects(context):
+    """Selected objects, or everything visible that is not part of the studio."""
+    studio_coll = bpy.data.collections.get(studio.COLL_NAME)
+    skip = set(studio_coll.all_objects) if studio_coll else set()
+    sel = [o for o in context.selected_objects if o not in skip]
+    if sel:
+        return sel
+    return [o for o in context.scene.objects
+            if o not in skip and o.visible_get() and o.type in {'MESH', 'EMPTY'}]
 
 
 def _run_sync(scene):
@@ -135,6 +173,47 @@ class BLENDERING_OT_sync(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERING_OT_build_studio(bpy.types.Operator):
+    bl_idname = "blendering.build_studio"
+    bl_label = "Build studio"
+    bl_description = ("Build the chosen studio around the selected objects "
+                      "(or around everything visible). Replaces the previous studio")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        s = context.scene.blendering
+        try:
+            spec = studio.load_preset(s.studio_preset)
+            studio.build(spec, _subject_objects(context), context.scene)
+        except Exception as exc:
+            self.report({'ERROR'}, f"Studio: {exc}")
+            return {'CANCELLED'}
+        s.studio_spec = json.dumps(spec)
+        self.report({'INFO'}, f"Studio built: {s.studio_preset}")
+        return {'FINISHED'}
+
+
+class BLENDERING_OT_save_studio(bpy.types.Operator):
+    bl_idname = "blendering.save_studio"
+    bl_label = "Save as preset"
+    bl_description = "Save the last built studio as a preset you can reuse in any project"
+
+    name: bpy.props.StringProperty(name="Name", default="My studio")
+
+    @classmethod
+    def poll(cls, context):
+        return bool(context.scene.blendering.studio_spec)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        studio.save_preset(self.name, json.loads(context.scene.blendering.studio_spec))
+        context.scene.blendering.studio_preset = self.name
+        self.report({'INFO'}, f"Saved studio preset: {self.name}")
+        return {'FINISHED'}
+
+
 # ------------------------------------------------------------------ panel
 
 class BLENDERING_PT_main(bpy.types.Panel):
@@ -160,7 +239,15 @@ class BLENDERING_PT_main(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="Studio builder", icon="LIGHT_AREA")
-        box.label(text="Coming in phase 1", icon="TIME")
+        box.prop(s, "studio_preset", text="")
+        row = box.row()
+        row.scale_y = 1.4
+        row.operator("blendering.build_studio", icon="SCENE")
+        box.operator("blendering.save_studio", icon="FILE_TICK")
+        sub = box.column(align=True)
+        sub.label(text="From description or photo (AI layer):")
+        sub.prop(s, "studio_description", text="", icon="TEXT")
+        sub.prop(s, "studio_reference", text="")
 
         box = layout.box()
         box.label(text="AI layer", icon="SHADERFX")
@@ -171,6 +258,8 @@ classes = (
     BlenderingPreferences,
     BlenderingSceneSettings,
     BLENDERING_OT_sync,
+    BLENDERING_OT_build_studio,
+    BLENDERING_OT_save_studio,
     BLENDERING_PT_main,
 )
 
