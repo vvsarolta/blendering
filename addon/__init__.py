@@ -3,7 +3,7 @@
 
 Modules (see the project plan):
     1. Rhino -> Blender bridge          (rhino_bridge.py)
-    2. Visualization tools               (studio.py, materials.py)
+    2. Visualization tools               (studio.py, materials.py, views.py)
     3. Scene-aware AI layer              (coming)
     4. Post-processing panel             (coming)
 """
@@ -13,7 +13,7 @@ import os
 
 import bpy
 
-from . import ai, assets, materials, post, rhino_bridge, studio, texture_library, ui_ai, ui_assets, ui_post  # noqa: F401
+from . import ai, assets, materials, post, rhino_bridge, studio, texture_library, ui_ai, ui_assets, ui_post, views  # noqa: F401
 
 WATCH_INTERVAL = 2.0  # seconds between file checks when auto-sync is on
 
@@ -409,6 +409,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.blendering = bpy.props.PointerProperty(type=BlenderingSceneSettings)
+    views.register()
     ui_post.register()
     ui_assets.register()
     ui_ai.register()
@@ -423,6 +424,7 @@ def unregister():
     ui_ai.unregister()
     ui_assets.unregister()
     ui_post.unregister()
+    views.unregister()
     del bpy.types.Scene.blendering
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
