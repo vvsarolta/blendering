@@ -353,6 +353,137 @@ def _set_distance(self, value):
     _move_camera(sc, Matrix.Translation(d.normalized() * (value - d.length)))
 
 
+# camera direction: pan (turn left/right in place), tilt (look up/down), roll
+
+def _cam_angles(cam):
+    """(pan, tilt, roll) in degrees. Pan 0 = looking along +Y, tilt > 0 = looking up."""
+    m = cam.matrix_world.to_3x3().normalized()
+    fwd = m @ Vector((0.0, 0.0, -1.0))
+    tilt = math.asin(max(-1.0, min(1.0, fwd.z)))
+    pan = math.atan2(-fwd.x, fwd.y)
+    level = Matrix.Rotation(pan, 3, 'Z') @ Matrix.Rotation(math.radians(90) + tilt, 3, 'X')
+    r = level.transposed() @ m
+    roll = math.atan2(r[1][0], r[0][0])
+    return math.degrees(pan), math.degrees(tilt), math.degrees(roll)
+
+
+def _set_cam_angles(cam, pan, tilt, roll):
+    tilt = max(-89.0, min(89.0, tilt))
+    rot = (Matrix.Rotation(math.radians(pan), 3, 'Z')
+           @ Matrix.Rotation(math.radians(90 + tilt), 3, 'X')
+           @ Matrix.Rotation(math.radians(roll), 3, 'Z'))
+    mw = rot.to_4x4()
+    mw.translation = cam.matrix_world.translation
+    cam.matrix_world = mw
+
+
+def _angle_prop(index):
+    def get(self):
+        cam = bpy.context.scene.camera
+        return _cam_angles(cam)[index] if cam else 0.0
+
+    def set(self, value):
+        cam = bpy.context.scene.camera
+        if cam is None:
+            return
+        a = list(_cam_angles(cam))
+        a[index] = value
+        _set_cam_angles(cam, *a)
+    return get, set
+
+
+_get_pan, _set_pan = _angle_prop(0)
+_get_tilt, _set_tilt = _angle_prop(1)
+_get_roll, _set_roll = _angle_prop(2)
+
+
+# product: move and turn the chosen object, relative to the camera
+
+def _product_update(self, context):
+    o = self.product
+    if o is None:
+        return
+    o[TRACK_KEY] = True
+    _add_to_views(context.scene, o, only_missing=True)
+    _rebase(context.scene)
+
+
+def _product_poll(self, o):
+    return o.type not in {'CAMERA', 'LIGHT'} and not _is_studio(o)
+
+
+def _add_to_views(scene, o, only_missing=False):
+    """Write the object's current position into every saved view."""
+    for cam in _scene_cameras(scene):
+        data = read_view(cam)
+        if not data:
+            continue
+        objs = data.setdefault("objects", {})
+        if only_missing and o.name in objs:
+            continue
+        objs[o.name] = {"m": _flat(o.matrix_basis), "hide_render": o.hide_render,
+                        "hide_viewport": o.hide_viewport}
+        cam[VIEW_KEY] = json.dumps(data)
+
+
+def _cam_axes(sc):
+    """Horizontal right and forward of the active camera (world X/Y without one)."""
+    if sc.camera is None:
+        return Vector((1, 0, 0)), Vector((0, 1, 0))
+    pan = math.radians(_cam_angles(sc.camera)[0])
+    fwd = Vector((-math.sin(pan), math.cos(pan), 0.0))
+    right = Vector((fwd.y, -fwd.x, 0.0))
+    return right, fwd
+
+
+def _product_axis(kind):
+    def axis(sc):
+        right, fwd = _cam_axes(sc)
+        return {"x": right, "y": -fwd, "z": Vector((0, 0, 1))}[kind]
+
+    def get(self):
+        sc = bpy.context.scene
+        o = self.product
+        return o.matrix_world.translation.dot(axis(sc)) if o else 0.0
+
+    def set(self, value):
+        sc = bpy.context.scene
+        o = self.product
+        if o is None:
+            return
+        a = axis(sc)
+        o.matrix_world = Matrix.Translation(a * (value - o.matrix_world.translation.dot(a))) @ o.matrix_world
+    return get, set
+
+
+_get_px, _set_px = _product_axis("x")
+_get_py, _set_py = _product_axis("y")
+_get_pz, _set_pz = _product_axis("z")
+
+
+def _product_heading(o):
+    m = o.matrix_world.to_3x3()
+    # heading of the object's own forward axis in the floor plane
+    for v in (m @ Vector((0, 1, 0)), m @ Vector((0, 0, -1)), m @ Vector((1, 0, 0))):
+        if abs(v.x) + abs(v.y) > 1e-4:
+            return math.degrees(math.atan2(v.x, v.y)), v
+    return 0.0, None
+
+
+def _get_turn(self):
+    o = self.product
+    return -_product_heading(o)[0] if o else 0.0
+
+
+def _set_turn(self, value):
+    o = self.product
+    if o is None:
+        return
+    delta = value - _get_turn(self)
+    p = o.matrix_world.translation.copy()
+    o.matrix_world = _rot_about(p, delta) @ o.matrix_world
+
+
 class BlenderingViewSettings(bpy.types.PropertyGroup):
     remember: bpy.props.BoolProperty(
         name="Remember changes",
@@ -375,6 +506,42 @@ class BlenderingViewSettings(bpy.types.PropertyGroup):
     distance: bpy.props.FloatProperty(
         name="Distance", description="Distance from the subject (horizontal)", unit='LENGTH',
         get=_get_distance, set=_set_distance, min=0.01, step=1, precision=3,
+    )
+    pan: bpy.props.FloatProperty(
+        name="Pan", description="Turn the camera left/right in place (degrees)",
+        get=_get_pan, set=_set_pan, step=100, precision=1,
+    )
+    tilt: bpy.props.FloatProperty(
+        name="Tilt", description="Look up (+) or down (-) (degrees). "
+                                 "Straighten verticals turns tilt into lens shift",
+        get=_get_tilt, set=_set_tilt, min=-89, max=89, step=100, precision=1,
+    )
+    roll: bpy.props.FloatProperty(
+        name="Roll", description="Lean the picture around the viewing axis (degrees)",
+        get=_get_roll, set=_set_roll, soft_min=-45, soft_max=45, step=100, precision=1,
+    )
+
+    product: bpy.props.PointerProperty(
+        name="Product", type=bpy.types.Object,
+        description="The object to move and turn per view (pick the product's top object, "
+                    "e.g. its empty)",
+        poll=_product_poll, update=_product_update,
+    )
+    product_x: bpy.props.FloatProperty(
+        name="Left / Right", description="Move the product sideways, as seen from the camera",
+        unit='LENGTH', get=_get_px, set=_set_px, step=1, precision=3,
+    )
+    product_y: bpy.props.FloatProperty(
+        name="Back / Front", description="Move the product away from (-) or towards (+) the camera",
+        unit='LENGTH', get=_get_py, set=_set_py, step=1, precision=3,
+    )
+    product_z: bpy.props.FloatProperty(
+        name="Down / Up", description="Move the product down or up",
+        unit='LENGTH', get=_get_pz, set=_set_pz, step=1, precision=3,
+    )
+    product_turn: bpy.props.FloatProperty(
+        name="Turn", description="Turn the product around its own vertical axis (degrees)",
+        get=_get_turn, set=_set_turn, step=100, precision=1,
     )
 
 
@@ -507,6 +674,39 @@ class BLENDERING_OT_view_track(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERING_OT_product_all_views(bpy.types.Operator):
+    bl_idname = "blendering.product_all_views"
+    bl_label = "Same in all views"
+    bl_description = "Put the product where it is now in every view"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.blendering_views.product is not None
+
+    def execute(self, context):
+        sc = context.scene
+        _add_to_views(sc, sc.blendering_views.product)
+        self.report({'INFO'}, "Product position copied to every view")
+        return {'FINISHED'}
+
+
+class BLENDERING_OT_camera_level(bpy.types.Operator):
+    bl_idname = "blendering.camera_level"
+    bl_label = "Level"
+    bl_description = "Remove tilt and roll: look straight ahead, picture not leaning"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.camera is not None
+
+    def execute(self, context):
+        cam = context.scene.camera
+        _set_cam_angles(cam, _cam_angles(cam)[0], 0.0, 0.0)
+        return {'FINISHED'}
+
+
 # ------------------------------------------------------------------ panel
 
 class BLENDERING_PT_views(bpy.types.Panel):
@@ -543,19 +743,40 @@ class BLENDERING_PT_views(bpy.types.Panel):
         layout.prop(s, "follow")
 
         if sc.camera is not None:
+            cd = sc.camera.data
             box = layout.box()
-            box.label(text="Fine-tune: " + sc.camera.name, icon="VIEW_CAMERA")
+            box.label(text="Camera: " + sc.camera.name, icon="VIEW_CAMERA")
             c = box.column(align=True)
-            c.prop(s, "orbit", slider=False)
+            c.label(text="Position")
+            c.prop(s, "orbit")
             c.prop(s, "height")
             c.prop(s, "distance")
-            c.prop(sc.camera.data, "lens", text="Lens")
-            box.operator("blendering.straighten_verticals", icon="CAMERA_DATA")
+            c = box.column(align=True)
+            c.label(text="Direction")
+            c.prop(s, "pan")
+            c.prop(s, "tilt")
+            c.prop(s, "roll")
+            c = box.column(align=True)
+            c.label(text="Lens")
+            c.prop(cd, "lens", text="Focal length")
+            c.prop(cd, "shift_x", text="Shift left / right")
+            c.prop(cd, "shift_y", text="Shift down / up")
+            row = box.row(align=True)
+            row.operator("blendering.camera_level", icon="ORIENTATION_VIEW")
+            row.operator("blendering.straighten_verticals", text="Straighten verticals", icon="CAMERA_DATA")
 
-        row = layout.row(align=True)
-        row.label(text="Selected:")
-        row.operator("blendering.view_track", text="Remember per view", icon="PINNED")
-        row.operator("blendering.view_track", text="", icon="UNPINNED").off = True
+        box = layout.box()
+        box.label(text="Product (remembered per view)", icon="OBJECT_DATA")
+        box.prop(s, "product", text="")
+        if s.product is not None:
+            c = box.column(align=True)
+            c.prop(s, "product_x")
+            c.prop(s, "product_y")
+            c.prop(s, "product_z")
+            c.prop(s, "product_turn")
+            box.operator("blendering.product_all_views", icon="DUPLICATE")
+        else:
+            box.label(text="Pick the product (its top object)", icon="INFO")
 
 
 classes = (
@@ -565,6 +786,8 @@ classes = (
     BLENDERING_OT_view_new,
     BLENDERING_OT_view_forget,
     BLENDERING_OT_view_track,
+    BLENDERING_OT_product_all_views,
+    BLENDERING_OT_camera_level,
     BLENDERING_PT_views,
 )
 
