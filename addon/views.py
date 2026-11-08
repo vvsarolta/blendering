@@ -19,6 +19,8 @@ is saved with the .blend file.
 "Studio follows camera": while it is on, moving the active camera around the
 subject turns the tracked studio around the subject with it, so the backdrop
 and the lights keep facing the camera. Lights you move by hand keep your change.
+Objects that are only tracked (the product) do not follow: move them by hand and
+the view remembers where they stand.
 """
 
 import json
@@ -54,6 +56,13 @@ def tracked_objects(scene):
     return out
 
 
+def studio_objects(scene):
+    """Lights and studio pieces: what "Studio follows camera" turns. Objects that are
+    only tracked (e.g. the product) stay where they are."""
+    return [o for o in scene.objects
+            if o.type != 'CAMERA' and (o.type == 'LIGHT' or _is_studio(o))]
+
+
 def _roots(objs):
     names = {o.name for o in objs}
     return [o for o in objs if o.parent is None or o.parent.name not in names]
@@ -61,7 +70,7 @@ def _roots(objs):
 
 def subject_pivot(scene):
     """Centre of the visible meshes that are not part of the studio."""
-    skip = {o.name for o in tracked_objects(scene)}
+    skip = {o.name for o in studio_objects(scene)}
     lo = Vector((1e18,) * 3)
     hi = Vector((-1e18,) * 3)
     found = False
@@ -231,7 +240,7 @@ def _rebase(scene):
         return
     az = _azimuth(scene, cam)
     _state.update(cam=cam.name, az=az, last_az=az,
-                  mats={o.name: o.matrix_world.copy() for o in _roots(tracked_objects(scene))})
+                  mats={o.name: o.matrix_world.copy() for o in _roots(studio_objects(scene))})
     _, mapping = _background(scene)
     _state["world_z"] = mapping.inputs["Rotation"].default_value[2] if mapping else None
 

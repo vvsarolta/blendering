@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "blendering"
-version = "0.2.0"
+version = "0.2.1"
 name = "Blendering"
 tagline = "Rhino bridge, studio builder and scene-aware AI for visualization"
 maintainer = "vvsarolta"
